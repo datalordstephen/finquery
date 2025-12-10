@@ -1,10 +1,10 @@
-from vector_store import query_collection   
+from vector_store import query   
 
 def retrieve_context(collection, query: str, n: int = 3) -> tuple[str, list]:
     """
     Helper function to get context string and sources from the DB.
     """    
-    results = query_collection(collection, query, n_results=n)
+    results = query(collection, query, n_results=n)
     
     # Handle case where no results are found
     if not results['documents'][0]:
