@@ -1,69 +1,167 @@
-import pdfplumber
-import pandas as pd
+from annotated_types import Len
+import pymupdf4llm
+import pymupdf
+import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+import re
+import statistics
 
-# using langchain's text splitter for chunking texts
+# splitter config
 TEXT_SPLITTER = RecursiveCharacterTextSplitter(
     chunk_size=1000,
     chunk_overlap=200,
-    length_function=len, 
-    add_start_index=True
+    length_function=Len
 )
 
-def chunk_pdf(pdf_path: str, n_pages: int = None) -> list  :
-    """
-    Extracts both text and tables from a PDF. 
-    Tables are converted to Markdown and saved as a chunk to preserve structure for the LLM.
-    Text is chunked using langchain's text splitter.
-    """
-    chunks = []
-    
-    # open pdf and iterate through pages up to n_pages
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_num, page in enumerate(pdf.pages):
-            if n_pages:
-                if page_num >= n_pages:
-                    break
-            
-            # process tables as markdowns and save as single chunk (best for llms)
-            tables = page.extract_tables()
-            print(f"Found: {len(tables)} tables")
-            print(f"Found: {page.find_tables()} tables")
-            for i, table in enumerate(tables):
-                if not table or len(table) < 2: 
-                    continue
-                
-                try:
-                    df = pd.DataFrame(table[1:], columns=table[0])
-                    df = df.fillna("") 
-                    markdown_table = df.to_markdown(index=False)
-                    
-                    chunks.append({
-                        "content": f"Table {i+1} on Page {page_num + 1}:\n{markdown_table}",
-                        "metadata": {
-                            "table_no": i, 
-                            "page": page_num + 1, 
-                            "type": "table", 
-                            "source": pdf_path
-                    }})
-                except Exception as e:
-                    print(f"Skipping malformed table on page {page_num}: {e}")
+# for regex
+NUMBER_PATTERN = re.compile(r"\d")
+LOWER_START_RE = re.compile(r"^[a-z]")
 
-            # chunk text with langchain
-            text = page.extract_text()
-            if text:
-                text_splits = TEXT_SPLITTER.split_text(text)
-                text_chunks = [
-                    {
-                        "content": p.strip(),
-                        "metadata": {
-                            "chunk_id": id, 
-                            "page": page_num + 1, 
-                            "type": "text", 
-                            "source": pdf_path}
-                    }
-                    for id, p in enumerate(text_splits)
-                ]
-                chunks.extend(text_chunks)
-    return chunks
+# <----- helper functions ---------->
+def extract_page_texts(pdf_path: str) -> dict[int, str]:
+    """
+    Extract raw text per page using PyMuPDF.
+    This gives us reliable page numbers.
+    """
+    doc = pymupdf.open(pdf_path)
+    page_texts = {}
+
+    for i, page in enumerate(doc):
+        page_texts[i + 1] = page.get_text("text")
+
+    return page_texts
+
+def extract_markdown(pdf_path: str) -> str:
+    """
+    Extract full-document Markdown using pymupdf4llm.
+    """
+    return pymupdf4llm.to_markdown(pdf_path)
+
+# <----- logic to split pdf in markdown into "blocks" ---------->
+def split_blocks(markdown: str) -> list[str]:
+    """
+    Split markdown into logical blocks separated by blank lines.
+    """
+    return [b.strip() for b in markdown.split("\n\n\n") if b.strip()]
+
+
+# <----- logic to determine which "block" contains a table  ---------->
+def is_prose_like(block: str) -> bool:
+    """
+    Detects flowing narrative text broken by layout line-wrapping.
+    Acts as a veto before layout-based table detection.
+    """
+    lines = [l.strip() for l in block.splitlines() if l.strip()]
+    if len(lines) < 3:
+        return False
+
+    flowing_breaks = 0
+    verb_hits = 0
+
+    for i in range(len(lines) - 1):
+        # sentence continues across line break
+        if (
+            not re.search(r"[.:;]$", lines[i]) and
+            LOWER_START_RE.match(lines[i + 1])
+        ):
+            flowing_breaks += 1
+
+    for w in re.findall(r"\b\w+\b", block.lower()):
+        if (
+            w.endswith("ed") or
+            w.endswith("ing") or
+            w in {"was", "were", "has", "may", "is", "approved", "commenced"}
+        ):
+            verb_hits += 1
+
+    return flowing_breaks >= 2 or verb_hits >= 3
+
+
+def passes_table_layout_heuristics(block: str) -> bool:
+    """
+    Pure layout-based table detector.
+    """
+    lines = [l.strip() for l in block.splitlines() if l.strip()]
+    if len(lines) < 3:
+        return False
+
+    # Column inference via multi-space splits
+    column_counts = []
+    numeric_lines = 0
+
+    for line in lines:
+        cols = re.split(r"\s{2,}", line)
+        column_counts.append(len(cols))
+        if NUMBER_PATTERN.search(line):
+            numeric_lines += 1
+
+    # Column consistency (allow header variance)
+    if len(set(column_counts)) > 2:
+        return False
+
+    # Numbers must appear on most rows
+    if numeric_lines < max(3, int(0.6 * len(lines))):
+        return False
+
+    # Line length consistency (tables are regular)
+    lengths = [len(l) for l in lines]
+    if statistics.pstdev(lengths) > 0.5 * statistics.mean(lengths):
+        return False
+
+    return True
+
+
+def is_table_block(block: str) -> bool:
+    """
+    Final table classifier.
+    """
+    # Prose always wins
+    if is_prose_like(block):
+        return False
+
+    return passes_table_layout_heuristics(block)
+
+# <----- end logic ---------->
+
+# <----- match page -> page number ---------->
+def find_block_page(block: str, page_texts: dict[int, str]) -> int | None:
+    """
+    Match a markdown block to its source page using numeric anchors.
+    """
+    anchors = re.findall(
+        r"\b(?:\d{4}|\$?\d[\d,]*\.?\d*)\b",
+        block
+    )
+
+    for page_num, text in page_texts.items():
+        score = sum(anchor in text for anchor in anchors[:10])
+        if score >= 3:
+            return page_num
+
+    return None
+
+
+def normalize_table(table_block: str) -> str:
+    """
+    Convert space-aligned table into explicit Markdown table.
+    """
+    rows = [
+        re.split(r"\s{2,}", line.strip())
+        for line in table_block.splitlines()
+    ]
+
+    max_cols = max(len(r) for r in rows)
+    rows = [r + [""] * (max_cols - len(r)) for r in rows]
+
+    header = rows[0]
+    body = rows[1:]
+
+    md = []
+    md.append("| " + " | ".join(header) + " |")
+    md.append("| " + " | ".join(["---"] * max_cols) + " |")
+
+    for row in body:
+        md.append("| " + " | ".join(row) + " |")
+
+    return "\n".join(md)
 
