@@ -1,13 +1,13 @@
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
+from together import Together
 from document_processor import process_pdf
 from vector_store import get_chroma_collection, add_documents
 from rag_engine import retrieve_context, generate_answer
 
 load_dotenv()
 
-openai_client = OpenAI()
+together_client = Together()
 
 PDF_PATH = "assets/2023_Annual_Report.pdf" 
 
