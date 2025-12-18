@@ -43,7 +43,7 @@ def query(query_text: str, n_results: int =5, filters: dict = None):
     collection = get_chroma_collection()
 
     query_results = collection.query(
-        query_embeddings = [query_text],
+        query_texts = [query_text],
         n_results=n_results,
         where = filters
     )
