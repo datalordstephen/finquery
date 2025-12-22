@@ -1,15 +1,10 @@
 import chromadb
-from chromadb.utils.embedding_functions import HuggingFaceEmbeddingFunction
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from typing import List
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
-
-embed_fn = HuggingFaceEmbeddingFunction(
-            api_key=os.getenv("HF_API_KEY"),
-            model_name="jina-embeddings-v2-small-en"
-        )
+embed_fn = SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
+)
         
 def get_chroma_collection(path: str = "./chroma_db", name: str = "finquery"):
     """
@@ -18,16 +13,16 @@ def get_chroma_collection(path: str = "./chroma_db", name: str = "finquery"):
     client = chromadb.PersistentClient(path=path)
     return client.get_or_create_collection(name= name, embedding_function= embed_fn)
 
-def add_documents(chunks: list):
+def add_documents(chunks: List):
     """
     Add processed chunks to ChromaDB collection.
     """
     collection = get_chroma_collection()
 
-    ids = [c['metadata']["doc_id"] for c in chunks]
-    documents = [c['content'] for c in chunks]
-    metadatas = [c['metadata'] for c in chunks]
-    
+    ids = [c["metadata"]["doc_id"] for c in chunks]
+    documents = [c["content"] for c in chunks]
+    metadatas = [c["metadata"] for c in chunks]
+
     # make use of custom embedding algo (jina-ai)
     collection.add(
         ids=ids,
@@ -35,9 +30,10 @@ def add_documents(chunks: list):
         metadatas=metadatas
     )
 
-    print(f"Total records in DB: {collection.count()}")
+    print(f"✓ Added {len(chunks)} chunks. Total in DB: {collection.count()}")
+    return collection.count()
 
-def query(query_text: str, n_results: int =5, filters: dict = None):
+def query_dense(query_text: str, n_results: int = 5, filters: dict = None):
     """ Extract Filters from query using a hf model (NER?) 
     """
     collection = get_chroma_collection()
@@ -51,11 +47,15 @@ def query(query_text: str, n_results: int =5, filters: dict = None):
     results = [
         {
             "doc_id": doc_id,
-            "score": distance
+            "content": doc,
+            "metadata": meta,
+            "score": 1 - distance  # Convert distance to similarity
         }
-        for doc_id, distance in zip(
-            results["ids"][0],
-            results["distances"][0]
+        for doc_id, doc, meta, distance in zip(
+            query_results["ids"][0],
+            query_results["documents"][0],
+            query_results["metadatas"][0],
+            query_results["distances"][0]
         )
     ]
 
