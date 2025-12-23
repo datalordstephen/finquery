@@ -8,6 +8,7 @@ class BM25Retriever:
         """Initialize BM25 with document chunks."""
         self.documents = [c["content"] for c in chunks]
         self.ids = [c["metadata"]["doc_id"] for c in chunks]
+        self.metadatas = [c["metadata"] for c in chunks]
         
         tokenized_docs = [doc.lower().split() for doc in self.documents]
         self.bm25 = BM25Okapi(tokenized_docs)
@@ -17,8 +18,8 @@ class BM25Retriever:
         scores = self.bm25.get_scores(query.lower().split())
 
         ranked = sorted(
-            zip(self.ids, self.documents, scores),
-            key=lambda x: x[2],
+            zip(self.ids, self.documents, self.metadatas, scores),
+            key=lambda x: x[3],
             reverse=True
         )[:k]
 
@@ -26,9 +27,10 @@ class BM25Retriever:
             {
                 "doc_id": doc_id,
                 "content": content,
+                "metadata": metadata,
                 "score": score
             }
-            for doc_id, content, score in ranked
+            for doc_id, content, metadata, score in ranked
         ]
 
 # <--------- rrf algo to combine dense + sparse search results ------------>

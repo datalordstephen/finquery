@@ -48,7 +48,7 @@ def process_pdf(pdf_path: str) -> list[dict]:
             
             doc_id = f"{doc_name}::page_{page_num + 1}::chunk_{chunk_idx}"
             
-            chunks.append({
+            chunk = {
                 "content": chunk_text.strip(),
                 "metadata": {
                     "type": "text",
@@ -56,8 +56,9 @@ def process_pdf(pdf_path: str) -> list[dict]:
                     "source": pdf_path,
                     "doc_id": doc_id
                 }
-            })
-        
+            }
+            chunks.append(chunk)
+
     print(f"✓ Extracted {len(chunks)} chunks from {len(doc)} pages")
     print(f"{'='*60}\n")
     

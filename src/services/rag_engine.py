@@ -1,8 +1,11 @@
-from .vector_store import query_dense, get_chroma_collection
+from .vector_store import query_collection, query_multiple_collections, get_or_create_collection, list_all_documents
 from .retrieval import BM25Retriever, rrf
 
 class RAGEngine:
     """
+    Multi-document RAG system.
+    Can query single document or across multiple documents.
+
     Complete RAG pipeline:
     1. Hybrid retrieval (dense + sparse)
     2. Reranking with RRF
@@ -18,49 +21,82 @@ class RAGEngine:
         """
         self.llm_client = llm_client
         self.use_hybrid = use_hybrid
-        self.bm25_retriever = None
-        
-        # Initialize BM25 if hybrid mode
-        if use_hybrid:
-            self._init_bm25()
+        self.bm25_cache = {}  # Cache BM25 retrievers per document
     
-    def _init_bm25(self):
-        """Load all docs from ChromaDB to initialize BM25."""
-        collection = get_chroma_collection()
-        
-        # Get all documents
-        all_docs = collection.get()
-        
-        chunks = [
-            {
-                "content": doc,
-                "metadata": meta
-            }
-            for doc, meta in zip(all_docs["documents"], all_docs["metadatas"])
-        ]
-        
-        if chunks:
-            self.bm25_retriever = BM25Retriever(chunks)
-            print(f"BM25 initialized with {len(chunks)} documents")
+    def _get_bm25_retriever(self, doc_name = str):
+        """
+        Get or create BM25 retriever for a specific document.
+        """
+        # if it's only vector search
+        if not self.use_hybrid:
+            return None
 
-    def retrieve(self, query: str, n_results: int = 5) -> list:
+        # Check cache
+        if doc_name in self.bm25_cache:
+            print("✓ Using cached BM25")
+            return self.bm25_cache[doc_name]
+        
+        # Load from ChromaDB
+        try:
+            collection = get_or_create_collection(doc_name)
+            if collection.count() == 0:
+                return None
+            
+            all_docs = collection.get()
+            chunks = [
+                {
+                    "content": doc,
+                    "metadata": meta
+                }
+                for doc, meta in zip(all_docs["documents"], all_docs["metadatas"])
+            ]
+            
+            retriever = BM25Retriever(chunks)
+            self.bm25_cache[doc_name] = retriever
+            print(f"✓ BM25 initialized for '{doc_name}' ({len(chunks)} chunks)")
+            
+            return retriever
+        
+        except Exception as e:
+            print(f"Error initializing BM25 for {doc_name}: {e}")
+            return None
+    
+    def retrieve_single_document(self, doc_name: str, query: str, n_results: int = 5) -> list:
         """
-        Retrieve relevant chunks using hybrid search.
-        
-        Returns:
-            List of dicts with 'doc_id', 'content', 'metadata', 'score'
+        Retrieve from a single document using hybrid search.
         """
-        # Dense-only retrieval
-        if not self.use_hybrid or self.bm25_retriever is None:
-            return query_dense(query, n_results=n_results)
+        if not self.use_hybrid:
+            return query_collection(doc_name, query, n_results)
         
-        # Hybrid retrieval
-        dense_results = query_dense(query, n_results=n_results * 2)
-        sparse_results = self.bm25_retriever.search(query, k=n_results * 2)
+        # Hybrid search
+        dense_results = query_collection(doc_name, query, n_results * 2)
         
-        fused = rrf([dense_results, sparse_results])
+        bm25_retriever = self._get_bm25_retriever(doc_name)
+        if bm25_retriever:
+            print(f"✓ BM25 retrieved for '{doc_name}'")
+            sparse_results = bm25_retriever.search(query, k=n_results * 2)
+            fused = rrf([dense_results, sparse_results])
+            return fused[:n_results]
+
+        return dense_results[:n_results]
+
+    def retrieve_multiple_documents(self, doc_names: list[str], query: str, n_results: int = 5) -> list:
+        """
+        Retrieve from multiple documents using hybrid search.
+        """
+        all_results = []
         
-        return fused[:n_results]
+        for doc_name in doc_names:
+            results = self.retrieve_single_document(doc_name, query, n_results)
+            all_results.extend(results)
+        
+        # Sort by score and return top n_results
+        all_results.sort(
+            key=lambda x: x.get("score", x.get("fused_score", 0)),
+            reverse=True
+        )
+        
+        return all_results[:n_results]
 
     def build_context(self, chunks: list) -> tuple[str, list]:
         """
@@ -76,7 +112,7 @@ class RAGEngine:
         sources = []
         
         for i, chunk in enumerate(chunks, 1):
-            doc_id = chunk["metadata"]["doc_id"]
+            doc_id = chunk["doc_id"]
             content = chunk["content"]
             
             context_parts.append(f"[Chunk {i}] doc_id: {doc_id}\n{content}")
@@ -144,28 +180,46 @@ Answer:"""
         except Exception as e:
             return f"Error generating answer: {str(e)}"
 
-    def query(self, question: str, n_results: int = 5) -> dict:
+    def query(self, question: str, doc_names: list[str] | None = None, n_results: int = 5) -> dict:
         """
-        End-to-end RAG pipeline.
+        Query one or multiple documents.
+        
+        Args:
+            question: User's question
+            doc_names: List of document names to search. If None, searches all.
+            n_results: Number of chunks to retrieve
         
         Returns:
-            {
-                "answer": str,
-                "sources": list,
-                "context": str (for debugging)
-            }
+            dict with answer, sources, and context
         """
-        # 1. Retrieve relevant chunks
-        chunks = self.retrieve(question, n_results=n_results)
+        # If no specific docs provided, search all
+        if doc_names is None:
+            all_docs = list_all_documents()
+            doc_names = [doc["name"] for doc in all_docs]
         
+        # can't search in an empty db
+        if not doc_names:
+            return {
+                "answer": "No documents found in database. Please upload documents first.",
+                "sources": [],
+                "context": ""
+            }
+
+        # 1. Retrieve relevant chunks
+        if len(doc_names) == 1:
+            chunks = self.retrieve_single_document(doc_names[0], question, n_results)
+        else:
+            chunks = self.retrieve_multiple_documents(doc_names, question, n_results)
+
         # 2. Build context
         context, sources = self.build_context(chunks)
         
         # 3. Generate answer
         answer = self.generate_answer(context, question)
-        
+
         return {
             "answer": answer,
             "sources": sources,
-            "context": context  # Include for debugging
+            "context": context,
+            "searched_docs": doc_names
         }
