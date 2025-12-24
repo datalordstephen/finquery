@@ -11,6 +11,8 @@ import os
 import shutil
 from dotenv import load_dotenv  
 
+# Disable tokenizer parallelism to avoid fork warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Initialize FastAPI
 app = FastAPI(
