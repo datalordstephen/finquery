@@ -24,13 +24,14 @@ def process_pdf(pdf_path: str) -> list[dict]:
     doc = pymupdf.open(pdf_path)
     chunks = []
     doc_name = os.path.basename(pdf_path)
+    pages = len(doc)
     
     print(f"\n{'='*60}")
     print(f"Processing: {doc_name}")
     print(f"{'='*60}")
-    print(f"Pages: {len(doc)}")
+    print(f"Pages: {pages}")
     
-    for page_num in range(len(doc)):
+    for page_num in range(pages):
         page = doc[page_num]
         page_text = page.get_text("text")
         
@@ -59,9 +60,9 @@ def process_pdf(pdf_path: str) -> list[dict]:
             }
             chunks.append(chunk)
 
-    print(f"✓ Extracted {len(chunks)} chunks from {len(doc)} pages")
+    print(f"✓ Extracted {len(chunks)} chunks from {pages} pages")
     print(f"{'='*60}\n")
     
     doc.close()
 
-    return chunks
+    return chunks, pages

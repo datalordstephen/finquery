@@ -66,10 +66,7 @@ async def list_documents():
     docs = list_all_documents()
     
     return DocumentsListResponse(
-        documents=[
-            DocumentInfo(name=doc["name"], count=doc["count"])
-            for doc in docs
-        ],
+        documents=[DocumentInfo(**doc) for doc in docs],
         total_documents=len(docs)
     )
 
@@ -105,13 +102,13 @@ async def upload_document(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         
         # process pdf
-        chunks = process_pdf(temp_path)
+        chunks, no_of_pages = process_pdf(temp_path)
         
         if not chunks:
             raise HTTPException(status_code=400, detail="No content extracted from PDF")
         
         # add to specific collection
-        result = add_documents(chunks, file.filename)
+        result = add_documents(chunks, file.filename, no_of_pages)
         
         # clear cache in for future re-uploads with same filename
         engine = get_rag_engine()
@@ -124,6 +121,7 @@ async def upload_document(file: UploadFile = File(...)):
         return UploadResponse(
             filename = file.filename,
             message=f"Successfully processed {file.filename}",
+            pages=no_of_pages,
             **result
         )
     

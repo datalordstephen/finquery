@@ -12,15 +12,16 @@ class QueryResponse(BaseModel):
     searched_docs: list[str]
 
 class UploadResponse(BaseModel):
-    filename:str
+    filename: str
     collection_name: str
-    chunks_added: int
+    pages: int
     total_docs: int
     message: str
 
 class DocumentInfo(BaseModel):
     name: str
     count: int
+    pages: int | None
 
 class DocumentsListResponse(BaseModel):
     documents: list[DocumentInfo]

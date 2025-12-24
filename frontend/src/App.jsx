@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
-import { uploadDocument, listDocuments, queryDocuments } from './api';
+import { uploadDocument, listDocuments, queryDocuments, deleteDocument } from './api';
 import './App.css';
 
 function App() {
@@ -14,7 +14,6 @@ function App() {
 
   const MAX_SELECTED_DOCS = 2;
 
-  // Load documents on mount
   useEffect(() => {
     fetchDocuments();
   }, []);
@@ -38,24 +37,35 @@ function App() {
     setIsUploading(true);
     try {
       await uploadDocument(file);
-      await fetchDocuments(); // Refresh list
-      alert(`Successfully uploaded ${file.name}`);
+      await fetchDocuments();
+      alert(`✅ Successfully uploaded ${file.name}`);
     } catch (error) {
       console.error('Error uploading document:', error);
-      alert(`Failed to upload ${file.name}`);
+      alert(`❌ Failed to upload ${file.name}`);
     } finally {
       setIsUploading(false);
     }
   };
 
+  const handleDelete = async (docName) => {
+    try {
+      await deleteDocument(docName);
+      // Remove from selected docs if it was selected
+      setSelectedDocs(selectedDocs.filter(name => name !== docName));
+      await fetchDocuments();
+      alert(`✅ Deleted ${docName}`);
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      alert(`❌ Failed to delete ${docName}`);
+    }
+  };
+
   const handleSelectDoc = (docName) => {
     if (selectedDocs.includes(docName)) {
-      // Deselect
       setSelectedDocs(selectedDocs.filter((name) => name !== docName));
     } else {
-      // Select (max 2)
       if (selectedDocs.length >= MAX_SELECTED_DOCS) {
-        alert(`You can only select up to ${MAX_SELECTED_DOCS} documents at a time`);
+        alert(`⚠️ You can only select up to ${MAX_SELECTED_DOCS} documents at a time`);
         return;
       }
       setSelectedDocs([...selectedDocs, docName]);
@@ -67,7 +77,6 @@ function App() {
   };
 
   const handleSendMessage = async (question) => {
-    // Add user message
     const userMessage = {
       role: 'user',
       content: question,
@@ -76,11 +85,9 @@ function App() {
 
     setIsLoading(true);
     try {
-      // Query with selected docs (or null for all)
       const documentNames = selectedDocs.length > 0 ? selectedDocs : null;
       const response = await queryDocuments(question, documentNames);
 
-      // Add assistant message
       const assistantMessage = {
         role: 'assistant',
         content: response.answer,
@@ -91,7 +98,7 @@ function App() {
       console.error('Error querying documents:', error);
       const errorMessage = {
         role: 'assistant',
-        content: 'Sorry, an error occurred while processing your question.',
+        content: '❌ Sorry, an error occurred while processing your question.',
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
@@ -100,15 +107,16 @@ function App() {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#111827' }}>
+    <div className="app-container">
       <Sidebar
         documents={documents}
         selectedDocs={selectedDocs}
         onSelectDoc={handleSelectDoc}
         onUpload={handleUpload}
+        onDelete={handleDelete}
         isUploading={isUploading}
       />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div className="main-content">
         <ChatArea messages={messages} isLoading={isLoading} />
         <InputBar
           selectedDocs={selectedDocs}

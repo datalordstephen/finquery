@@ -31,20 +31,28 @@ def create_collection_name(doc_name: str) -> str:
     
     return name
 
-def get_or_create_collection(doc_name: str, path: str = "./chroma_db"):
+def get_or_create_collection(doc_name: str, path: str = "./chroma_db", pages: int = None):
     """
     Get or create a collection for a specific document.
     Each document gets its own collection.
+    Store number of pages as metadata.
     """
     client = get_chroma_client(path)
     collection_name = create_collection_name(doc_name)
     
+    metadata = {
+        "pages": pages,
+        "filename": doc_name
+    }
+    
+    
     return client.get_or_create_collection(
         name=collection_name,
-        embedding_function=embed_fn
+        embedding_function=embed_fn,
+        metadata=metadata
     )
 
-def add_documents(chunks: list, doc_name: str) -> dict:
+def add_documents(chunks: list, doc_name: str, pages: int = None) -> dict:
     """
     Add processed chunks to a specific collection.
     
@@ -55,7 +63,7 @@ def add_documents(chunks: list, doc_name: str) -> dict:
     Returns:
         dict with collection_name and count
     """
-    collection = get_or_create_collection(doc_name)
+    collection = get_or_create_collection(doc_name, pages=pages)
 
     ids = [c["metadata"]["doc_id"] for c in chunks]
     documents = [c["content"] for c in chunks]
@@ -71,7 +79,6 @@ def add_documents(chunks: list, doc_name: str) -> dict:
     print(f"✓ Added {len(chunks)} chunks to collection {collection.name}.")
     return {
         "collection_name": collection.name,
-        "chunks_added": len(chunks),
         "total_docs": collection.count()
     }
 
@@ -139,13 +146,18 @@ def list_all_documents(path: str = "./chroma_db") -> list[dict]:
     client = get_chroma_client(path)
     collections = client.list_collections()
     
-    return [
-        {
-            "name": col.name,
+    documents = []
+    for col in collections:
+        pages = col.metadata.get("pages", None)
+        filename = col.metadata.get("filename", col.name)
+        
+        documents.append({
+            "name": filename,
             "count": col.count(),
-        }
-        for col in collections
-    ]
+            "pages": pages 
+        })
+    
+    return documents
 
 def delete_document_collection(doc_name: str, path: str = "./chroma_db"):
     """
