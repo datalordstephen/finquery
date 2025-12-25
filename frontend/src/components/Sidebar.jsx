@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import toast from 'react-hot-toast';
 
 const Sidebar = ({ documents, selectedDocs, onSelectDoc, onUpload, onDelete, isUploading }) => {
   const fileInputRef = useRef(null);
@@ -40,9 +41,53 @@ const Sidebar = ({ documents, selectedDocs, onSelectDoc, onUpload, onDelete, isU
 
   const handleDelete = (e, docName) => {
     e.stopPropagation();
-    if (window.confirm(`Delete ${docName}?`)) {
-      onDelete(docName);
-    }
+    
+    toast((t) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontWeight: 500 }}>Delete {docName}?</div>
+        <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+          This action cannot be undone.
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <button
+            onClick={() => {
+              onDelete(docName);
+              toast.dismiss(t.id);
+            }}
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              backgroundColor: '#ef4444',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              backgroundColor: '#f3f4f6',
+              color: '#1f2937',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: Infinity,
+      style: { maxWidth: '400px' }
+    });
   };
 
   return (

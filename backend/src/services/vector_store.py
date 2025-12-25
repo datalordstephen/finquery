@@ -31,7 +31,7 @@ def create_collection_name(doc_name: str) -> str:
     
     return name
 
-def get_or_create_collection(doc_name: str, path: str = "./chroma_db", pages: int = None):
+def get_or_create_collection(doc_name: str, path: str = "./chroma_db", pages: int = None, creating : bool = False):
     """
     Get or create a collection for a specific document.
     Each document gets its own collection.
@@ -39,18 +39,24 @@ def get_or_create_collection(doc_name: str, path: str = "./chroma_db", pages: in
     """
     client = get_chroma_client(path)
     collection_name = create_collection_name(doc_name)
-    
-    metadata = {
-        "pages": pages,
-        "filename": doc_name
-    }
-    
-    
-    return client.get_or_create_collection(
-        name=collection_name,
-        embedding_function=embed_fn,
-        metadata=metadata
-    )
+
+    # add metadata if we're creating the document. else just retrieve
+    if creating:
+        metadata = {
+            "pages": pages,
+            "filename": doc_name
+        }
+
+        return client.create_collection(
+            name=collection_name,
+            embedding_function=embed_fn,
+            metadata=metadata
+        )
+    else:
+        return client.get_collection(
+            name=collection_name,
+            embedding_function=embed_fn,
+        )
 
 def add_documents(chunks: list, doc_name: str, pages: int = None) -> dict:
     """
@@ -63,7 +69,7 @@ def add_documents(chunks: list, doc_name: str, pages: int = None) -> dict:
     Returns:
         dict with collection_name and count
     """
-    collection = get_or_create_collection(doc_name, pages=pages)
+    collection = get_or_create_collection(doc_name, pages=pages, creating=True)
 
     ids = [c["metadata"]["doc_id"] for c in chunks]
     documents = [c["content"] for c in chunks]

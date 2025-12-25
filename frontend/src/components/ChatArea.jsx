@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import Message from './Message';
 
-const ChatArea = ({ messages, isLoading }) => {
+const ChatArea = ({ messages, isLoading, onExampleClick }) => {
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -11,6 +11,14 @@ const ChatArea = ({ messages, isLoading }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Example questions
+  const exampleQuestions = [
+    "What do you do?",
+    "What was the revenue in year 2023?",
+    "What were the operating expenses?",
+    "How much did I spend at bokku?",
+  ];
 
   return (
     <div className="chat-area">
@@ -22,6 +30,22 @@ const ChatArea = ({ messages, isLoading }) => {
             </svg>
           </div>
           <div className="chat-empty-text">Ready when you are.</div>
+          
+          {/* Example Questions */}
+          <div className="example-questions">
+            <div className="example-title">Try asking:</div>
+            <div className="example-grid">
+              {exampleQuestions.map((question, idx) => (
+                <button
+                  key={idx}
+                  className="example-button"
+                  onClick={() => onExampleClick(question)}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       ) : (
         <>

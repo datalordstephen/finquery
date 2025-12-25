@@ -127,34 +127,46 @@ class RAGEngine:
         return context_str, sources
 
     def generate_answer(self, context: str, query: str) -> str:
-        """Generate answer using LLM."""
+        """Generate answer using LLM"""
 
         system_prompt = """
-You are an expert financial analysis assistant.
+You are FinQuery, an intelligent financial document assistant.
 
-Answer questions using ONLY the provided context chunks. Each chunk has a `doc_id` format:
-<document>::page_<number>::<type>_<index>
+IDENTITY & PURPOSE:
+- You help users find information in their uploaded financial documents
+- You're knowledgeable, precise, and cite your sources
+- You provide helpful suggestions when information isn't available
 
-CORE RULES:
-1. Use ONLY provided context - never use prior knowledge
-2. If answer not in context, say: "The documents don't contain sufficient information"
-3. Cite every fact using: "Source: <doc>, page <num> (Table/Text <idx>)"
+CONVERSATIONAL RULES:
+- If greeted (hi, hello, hey): Respond warmly and ask how you can help
+- If asked about capabilities: Explain you analyze financial documents and answer questions about them
+- If thanked: Acknowledge gracefully
+- For unclear questions: Ask for clarification politely
+
+DOCUMENT ANALYSIS RULES:
+1. Use ONLY the provided context chunks to answer financial questions
+2. Each chunk has format: <document>::page_<number>::<type>_<index>
+3. Always cite sources: "Source: <doc>, page <num>"
+4. If information not in context: 
+   - Say "I couldn't find that specific information in the uploaded documents"
+   - Suggest what IS available: "However, I can help you with [related topics from the documents]"
+   - Or ask: "Could you rephrase or ask about something else from the documents?"
 
 TABLE HANDLING:
-- Tables in Markdown format are authoritative sources of truth
-- Extract exact values from relevant rows/columns  
-- If question mentions "the table" or specific data points, prioritize table over prose
+- Tables are authoritative - prioritize them for numerical data
+- Extract exact values from relevant rows/columns
 - Preserve exact figures, units, currencies, dates
 - Never recalculate or round numbers
 
-CITATION FORMAT:
-Source: msft_10k_2023.pdf, page 42 (Table 1, Row 3)
-Source: report.pdf, page 15 (Text 2)
+TONE:
+- Professional yet approachable
+- Concise but thorough
+- Helpful and proactive
+- Exclude the doc_id from your response, simply return the answer and the cited source
 
-Be precise, factual, and always cite sources.
+Always cite sources and be precise with financial data.
 """
         if not context:
-            print("No Context Found")
             return "I couldn't find relevant information in the documents to answer your question."
         
         user_prompt = f"""
@@ -192,6 +204,18 @@ Answer:"""
         Returns:
             dict with answer, sources, and context
         """
+
+        #  Check if it's a conversational query (no RAG needed)
+        conversational_response = self._handle_conversational_query(question)
+        if conversational_response:
+            return {
+                "answer": conversational_response,
+                "sources": [],
+                "context": None,
+                "searched_docs": []
+            }
+
+        # perform RAG 
         # If no specific docs provided, search all
         if doc_names is None:
             all_docs = list_all_documents()
@@ -223,3 +247,42 @@ Answer:"""
             "context": context,
             "searched_docs": doc_names
         }
+    
+    def _handle_conversational_query(self, query: str) -> str | None:
+        """
+        Handle conversational/meta queries without RAG.
+        Returns response if conversational, None if needs RAG.
+        """
+        query_lower = query.lower().strip()
+        
+        # Greetings
+        greetings = ["hi", "hello", "hi there", "hey", "good morning", "good afternoon", "good evening"]
+        if any(query_lower.startswith(g) for g in greetings) and len(query_lower.split()) <= 3:
+            return "Hello! I'm FinQuery, your financial document assistant. I can help you find information in your uploaded documents. What would you like to know?"
+        
+        # Identity questions
+        identity_keywords = [
+            "what are you", "who are you", "what is finquery", 
+            "tell me about yourself", "what do you do", "what can you do",
+            "how do you work", "what's your purpose"
+        ]
+        if any(keyword in query_lower for keyword in identity_keywords):
+            return "I'm FinQuery, an AI assistant that helps you analyze financial documents. Upload PDFs of reports, statements, or other financial documents, and I'll answer questions about them using the exact information from those documents. I can help you find specific numbers, summarize sections, and explain financial data—all with source citations so you know exactly where the information comes from."
+        
+        # Capability questions
+        capability_keywords = ["how does this work", "how to use", "help me", "what can i ask", "how do i use this"]
+        if any(keyword in query_lower for keyword in capability_keywords):
+            return "Here's how to use FinQuery:\n\n1. Upload financial documents (PDFs) using the sidebar\n2. Optionally select specific documents to search (or I'll search all)\n3. Ask questions about the content - numbers, dates, trends, summaries, etc.\n4. I'll provide answers with page citations so you can verify\n\nTry asking things like:\n- 'What was the revenue in Q3?'\n- 'Summarize the key financial metrics'\n- 'What were the operating expenses?'"
+        
+        # Thanks/gratitude
+        thanks_keywords = ["thank you", "thanks", "thx", "appreciate", "arigato"]
+        if any(keyword in query_lower for keyword in thanks_keywords) and len(query_lower.split()) <= 5:
+            return "You're welcome! Let me know if you have any other questions about your documents."
+        
+        # Goodbyes
+        goodbye_keywords = ["bye", "goodbye", "see you", "exit", "quit"]
+        if any(keyword in query_lower for keyword in goodbye_keywords) and len(query_lower.split()) <= 3:
+            return "Goodbye! Feel free to come back anytime you need to analyze financial documents."
+        
+        # Not a conversational query - needs RAG
+        return None

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
-    question: str = Field(..., min_length=3)
+    question: str = Field(..., min_length=2)
     document_names: list[str] | None = Field(None, description="List of docs to search. If null, searches all docs.")
     n_results: int = Field(default=5, ge=1, le=20)
 
