@@ -127,8 +127,6 @@ async def upload_document(file: UploadFile = File(...)):
     
     # Cleanup on error
     except Exception as e:
-        import traceback
-        traceback.print_exc()
 
         if os.path.exists(temp_path):
             os.remove(temp_path)
