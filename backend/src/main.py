@@ -94,7 +94,7 @@ async def upload_document(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
-    temp_path = f"./temp_{file.filename}"
+    temp_path = f"./{file.filename}"
     
     # Save file temporarily and process it
     try:
@@ -102,7 +102,7 @@ async def upload_document(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         
         # process pdf
-        chunks, no_of_pages = process_pdf(temp_path)
+        chunks, no_of_pages = process_pdf(together_client, temp_path)
         
         if not chunks:
             raise HTTPException(status_code=400, detail="No content extracted from PDF")
@@ -183,6 +183,7 @@ async def delete_document(doc_name: str):
     engine = get_rag_engine()
     if doc_name in engine.bm25_cache:
         del engine.bm25_cache[doc_name]
+        print(f"✓ Delected {doc_name} BM25 cache")
     
     return {"message": f"Document '{doc_name}' deleted successfully"}
 

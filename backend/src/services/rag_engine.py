@@ -100,7 +100,7 @@ class RAGEngine:
 
     def build_context(self, chunks: list) -> tuple[str, list]:
         """
-        Convert retrieved chunks into context string.
+        Convert retrieved chunks into context string with clean source info.
         
         Returns:
             (context_string, sources)
@@ -114,12 +114,23 @@ class RAGEngine:
         for i, chunk in enumerate(chunks, 1):
             doc_id = chunk["doc_id"]
             content = chunk["content"]
+            chunk_type = chunk["metadata"].get("type")
+            page = chunk["metadata"].get("page")
+
+            # Extract filename from doc_id (format: filename::page_X::type_Y)
+            filename = doc_id.split("::")[0]
             
-            context_parts.append(f"[Chunk {i}] doc_id: {doc_id}\n{content}")
+            # Build clean source reference
+            if chunk_type == "table":
+                source_ref = f"{filename}, page {page} (Table {chunk["metadata"].get("table_num", "")})"
+            else:
+                source_ref = f"{filename}, page {page}"
+            
+            context_parts.append(f"[Source: {source_ref}]\n{content}")
             sources.append({
-                "doc_id": doc_id,
-                "page": chunk["metadata"].get("page"),
-                "type": chunk["metadata"].get("type"),
+                "filename": filename,
+                "page": page,
+                "type": chunk_type,
                 "score": chunk.get("score", chunk.get("fused_score", 0))
             })
         
@@ -132,39 +143,32 @@ class RAGEngine:
         system_prompt = """
 You are FinQuery, an intelligent financial document assistant.
 
+Answer questions using ONLY the provided context chunks.
+
+Each chunk includes its source in the format: Source: filename, page X or Source: filename, page X (Table)
+
 IDENTITY & PURPOSE:
 - You help users find information in their uploaded financial documents
-- You're knowledgeable, precise, and cite your sources
 - You provide helpful suggestions when information isn't available
 
 CONVERSATIONAL RULES:
-- If greeted (hi, hello, hey): Respond warmly and ask how you can help
+- If greeted: Respond warmly and ask how you can help
 - If asked about capabilities: Explain you analyze financial documents and answer questions about them
-- If thanked: Acknowledge gracefully
 - For unclear questions: Ask for clarification politely
 
-DOCUMENT ANALYSIS RULES:
-1. Use ONLY the provided context chunks to answer financial questions
-2. Each chunk has format: <document>::page_<number>::<type>_<index>
-3. Always cite sources: "Source: <doc>, page <num>"
-4. If information not in context: 
-   - Say "I couldn't find that specific information in the uploaded documents"
-   - Suggest what IS available: "However, I can help you with [related topics from the documents]"
-   - Or ask: "Could you rephrase or ask about something else from the documents?"
+RULES:
+1. Use ONLY the provided context to answer questions
+2. Always cite sources EXACTLY as shown in the context (e.g., "Source: statement.pdf, page 1")
+3. If answer not in context, say: "I couldn't find that information in the uploaded documents" and suggest something from the context you were provided.
 
 TABLE HANDLING:
 - Tables are authoritative - prioritize them for numerical data
 - Extract exact values from relevant rows/columns
-- Preserve exact figures, units, currencies, dates
-- Never recalculate or round numbers
+- Preserve exact numbers. Never modify them
 
-TONE:
-- Professional yet approachable
-- Concise but thorough
-- Helpful and proactive
-- Exclude the doc_id from your response, simply return the answer and the cited source
+TONE: Professional, concise, and precise with financial data.
 
-Always cite sources and be precise with financial data.
+Always cite your sources.
 """
         if not context:
             return "I couldn't find relevant information in the documents to answer your question."
