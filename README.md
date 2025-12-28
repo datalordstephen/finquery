@@ -23,6 +23,7 @@ FinQuery addresses the **security** concerns of analyzing _personal_, dense `fin
 * **Multi-Document Intelligence**: Each document is managed in an isolated local collection, allowing for targeted or cross-document queries.
 * **Page-Level Citations**: Every answer includes the source filename and specific page number (e.g., `report.pdf, page 5`).
 * **Table-Aware Ingestion**: PDF processing is optimized to preserve the integrity of numerical data and tables.
+* **Context Enhancement**: Tables are passed in a small llm call to to normalize them and add context that can improve semantic search 
 
 ---
 
@@ -34,6 +35,7 @@ FinQuery addresses the **security** concerns of analyzing _personal_, dense `fin
 * **Vector Database**: ChromaDB (Persistent local storage).
 * **Embeddings**: Sentence-Transformers (`all-MiniLM-L6-v2`).
 * **Document Processing**: PyMuPDF and LangChain.
+* **Table Extraction**: Camelot-py
 
 ### Frontend
 * **Library**: React 19.
@@ -57,6 +59,7 @@ finquery/
 │   │   │   ├── schemas.py      # Pydantic schemas for API
 │   │   ├── services/
 │   │   │   ├── ingest.py       # PDF processing  
+│   │   │   ├── process_tables.py   # table processing
 │   │   │   ├── rag_engine.py   # Complete RAG logic
 │   │   │   ├── retrieval.py    # BM25 and RRF algorithms
 │   │   │   └── vector_store.py # ChromaDB management
@@ -82,6 +85,24 @@ finquery/
 * Node.js & npm.
 * Together AI API Key.
 
+### System Dependencies (Required for Camelot PDF Parsing)
+Camelot requires **Ghostscript** and **Tkinter** to be installed on your system to process PDF tables:
+
+* **macOS**:
+```bash
+brew install ghostscript tcl-tk
+```
+
+* **Linux (Ubuntu/Debian)**:
+```bash
+sudo apt update && sudo apt install ghostscript python3-tk
+```
+
+* **Windows**:
+1. Download and install the Ghostscript AGPL Release.
+2. Ensure the Ghostscript bin and lib folders are added to your System PATH.
+3. Tkinter is typically included with standard Python installations on Windows.  
+
 ---
 ### Installation
 1. Clone the Repository:
@@ -93,10 +114,20 @@ cd finquery
 2. Backend Setup:
 ```bash
 cd backend
+
+# install dependencies
 uv sync
+
+# Activate the virtual environment
+source .venv/bin/activate      # macOS/Linux
+# .venv\Scripts\activate       # Windows (CMD)
+# .venv\Scripts\Activate.ps1    # Windows (PowerShell)
+
+# start the backend
+uvicorn src.main:app --reload 
 ```
 
-3. Create a _.env_ file in this directory (backend):  
+3. Create a `.env` file in this directory (backend):  
 ```bash
 touch .env
 ```
