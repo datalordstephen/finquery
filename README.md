@@ -1,4 +1,4 @@
-# FinQuery - AI Financial Assistant 
+# FinQuery - Financial Document QA System 
 **FinQuery** is a high-performance, RAG-based system designed to help users extract *grounded*, precise insights from financial documents. By utilizing **hybrid search** (semantic `vector` search + keyword-based `BM25`), it ensures that numerical data and specific financial terminology are captured with high accuracy.
 
 
