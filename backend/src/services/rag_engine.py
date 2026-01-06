@@ -1,4 +1,4 @@
-from .vector_store import query_collection, query_multiple_collections, get_or_create_collection, list_all_documents
+from .vector_store import query_collection, get_or_create_collection, list_all_documents
 from .retrieval import BM25Retriever, rrf
 
 class RAGEngine:
@@ -23,7 +23,7 @@ class RAGEngine:
         self.use_hybrid = use_hybrid
         self.bm25_cache = {}  # Cache BM25 retrievers per document
     
-    def _get_bm25_retriever(self, doc_name = str):
+    def _get_bm25_retriever(self, doc_name = str, user_id: str  = None):
         """
         Get or create BM25 retriever for a specific document.
         """
@@ -31,14 +31,16 @@ class RAGEngine:
         if not self.use_hybrid:
             return None
 
+        cache_key = f"{user_id}_{doc_name}" if user_id else doc_name
+
         # Check cache
-        if doc_name in self.bm25_cache:
+        if cache_key in self.bm25_cache:
             print("✓ Using cached BM25")
-            return self.bm25_cache[doc_name]
+            return self.bm25_cache[cache_key]
         
         # Load from ChromaDB
         try:
-            collection = get_or_create_collection(doc_name)
+            collection = get_or_create_collection(doc_name, user_id)
             if collection.count() == 0:
                 return None
             
@@ -52,7 +54,7 @@ class RAGEngine:
             ]
             
             retriever = BM25Retriever(chunks)
-            self.bm25_cache[doc_name] = retriever
+            self.bm25_cache[cache_key] = retriever
             print(f"✓ BM25 initialized for '{doc_name}' ({len(chunks)} chunks)")
             
             return retriever
@@ -61,17 +63,17 @@ class RAGEngine:
             print(f"Error initializing BM25 for {doc_name}: {e}")
             return None
     
-    def retrieve_single_document(self, doc_name: str, query: str, n_results: int = 5) -> list:
+    def retrieve_single_document(self, doc_name: str, query: str, user_id: str = None, n_results: int = 5) -> list:
         """
         Retrieve from a single document using hybrid search.
         """
         if not self.use_hybrid:
-            return query_collection(doc_name, query, n_results)
+            return query_collection(doc_name, query, n_results, user_id=user_id)
         
         # Hybrid search
-        dense_results = query_collection(doc_name, query, n_results * 2)
+        dense_results = query_collection(doc_name, query, n_results * 2, user_id=user_id)
         
-        bm25_retriever = self._get_bm25_retriever(doc_name)
+        bm25_retriever = self._get_bm25_retriever(doc_name, user_id)
         if bm25_retriever:
             print(f"✓ BM25 retrieved for '{doc_name}'")
             sparse_results = bm25_retriever.search(query, k=n_results * 2)
@@ -80,14 +82,14 @@ class RAGEngine:
 
         return dense_results[:n_results]
 
-    def retrieve_multiple_documents(self, doc_names: list[str], query: str, n_results: int = 5) -> list:
+    def retrieve_multiple_documents(self, doc_names: list[str], query: str, user_id: str = None, n_results: int = 5) -> list:
         """
         Retrieve from multiple documents using hybrid search.
         """
         all_results = []
         
         for doc_name in doc_names:
-            results = self.retrieve_single_document(doc_name, query, n_results)
+            results = self.retrieve_single_document(doc_name, query, user_id, n_results=n_results)
             all_results.extend(results)
         
         # Sort by score and return top n_results
@@ -209,13 +211,14 @@ Answer:"""
         except Exception as e:
             return f"Error generating answer: {str(e)}"
 
-    def query(self, question: str, doc_names: list[str] | None = None, n_results: int = 5) -> dict:
+    def query(self, question: str, doc_names: list[str] | None = None, user_id: str = None, n_results: int = 5) -> dict:
         """
         Query one or multiple documents.
         
         Args:
             question: User's question
             doc_names: List of document names to search. If None, searches all.
+            user_id: User ID for document ownership verification
             n_results: Number of chunks to retrieve
         
         Returns:
@@ -235,7 +238,7 @@ Answer:"""
         # perform RAG 
         # If no specific docs provided, search all
         if doc_names is None:
-            all_docs = list_all_documents()
+            all_docs = list_all_documents(user_id)
             doc_names = [doc["name"] for doc in all_docs]
         
         # can't search in an empty db
@@ -248,9 +251,9 @@ Answer:"""
 
         # 1. Retrieve relevant chunks
         if len(doc_names) == 1:
-            chunks = self.retrieve_single_document(doc_names[0], question, n_results)
+            chunks = self.retrieve_single_document(doc_names[0], question, user_id, n_results)
         else:
-            chunks = self.retrieve_multiple_documents(doc_names, question, n_results)
+            chunks = self.retrieve_multiple_documents(doc_names, question, user_id, n_results)
 
         # 2. Build context
         context, sources = self.build_context(chunks)

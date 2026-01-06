@@ -26,3 +26,20 @@ class DocumentInfo(BaseModel):
 class DocumentsListResponse(BaseModel):
     documents: list[DocumentInfo]
     total_documents: int
+
+class UserRegister(BaseModel):
+    email: str = Field(..., min_length=3, pattern=r'^[\w\.-]+@[\w\.-]+\.\w+$')
+    password: str = Field(..., min_length=6)
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    email: str
+
+class UserResponse(BaseModel):
+    email: str
+    created_at: str

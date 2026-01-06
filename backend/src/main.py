@@ -1,12 +1,14 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from together import Together
 
+from .services.auth import create_access_token, get_current_user, get_current_user_optional, get_password_hash, verify_password
 from .services.ingest import process_pdf
 from .services.vector_store import add_documents, list_all_documents, delete_document_collection, get_collection_stats
 from .services.rag_engine import RAGEngine
 from .models.schemas import *
 
+from datetime import timedelta, datetime
 import os
 import shutil
 from dotenv import load_dotenv  
@@ -17,14 +19,23 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Initialize FastAPI
 app = FastAPI(
     title="FinQuery API",
-    description="Multi-Document Financial Q&A System",
-    version="2.0.0"
+    description="Multi-Document Financial Q&A System with User Management",
+    version="3.0.0"
 )
+
+# Initialize mock users database (for testing)
+users_db = {}
+
+# Get allowed origins from environment variable
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173"
+).split(",")
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], 
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,15 +66,29 @@ async def root():
         "version": "2.0.0"
     }
 
-@app.get("/documents", response_model=DocumentsListResponse)
-async def list_documents():
+@app.get("/me", response_model=UserResponse)
+async def get_current_user_info(user_id: str = Depends(get_current_user)):
     """
-    List all uploaded documents.
+    Get current user information.
+    """
+    if user_id not in users_db:
+        raise HTTPException(404, "User not found")
+    
+    user = users_db[user_id]
+    return {
+        "email": user["email"],
+        "created_at": user["created_at"]
+    }
+
+@app.get("/documents", response_model=DocumentsListResponse)
+async def list_documents(user_id: str = Depends(get_current_user)):
+    """
+    List all uploaded documents (for current user)
     """
     if not os.path.exists("./chroma_db"):
         return DocumentsListResponse(documents=[], total_documents=0)
     
-    docs = list_all_documents()
+    docs = list_all_documents(user_id)
     
     return DocumentsListResponse(
         documents=[DocumentInfo(**doc) for doc in docs],
@@ -71,11 +96,11 @@ async def list_documents():
     )
 
 @app.get("/documents/{doc_name}")
-async def get_document_stats(doc_name: str):
+async def get_document_stats(doc_name: str, user_id: str = Depends(get_current_user)):
     """
     Get statistics for a specific document.
     """
-    stats = get_collection_stats(doc_name)
+    stats = get_collection_stats(doc_name, user_id)
     
     if not stats["exists"]:
         raise HTTPException(404, f"Document '{doc_name}' not found")
@@ -84,10 +109,64 @@ async def get_document_stats(doc_name: str):
 
 
 # <---------------------- POST requests ---------------------->
-@app.post("/upload", response_model=UploadResponse)
-async def upload_document(file: UploadFile = File(...)):
+@app.post("/register", response_model=Token)
+async def register(user: UserRegister):
     """
-    Upload and process a PDF document.
+    Register a new user.
+    """
+    if user.email in users_db:
+        raise HTTPException(400, "Email already registered")
+    
+    hashed_password = get_password_hash(user.password)
+    users_db[user.email] = {
+        "email": user.email,
+        "hashed_password": hashed_password,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=timedelta(minutes=30)
+    )
+    
+    print(f"✓ New user registered: {user.email}")
+    print("CURRENT USERS: ", users_db.keys())
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "email": user.email
+    }
+
+@app.post("/login", response_model=Token)
+async def login(user: UserLogin):
+    """
+    Login existing user.
+    """
+    if user.email not in users_db:
+        raise HTTPException(401, "Invalid email or password")
+    
+    db_user = users_db[user.email]
+    if not verify_password(user.password, db_user["hashed_password"]):
+        raise HTTPException(401, "Invalid email or password")
+    
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=timedelta(minutes=30)
+    )
+    
+    print(f"✓ User logged in: {user.email}")
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "email": user.email
+    }
+
+@app.post("/upload", response_model=UploadResponse)
+async def upload_document(file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
+    """
+    Upload and process a PDF document (for current user)
     Each document gets its own collection.
     """
     # Validate file type
@@ -107,16 +186,19 @@ async def upload_document(file: UploadFile = File(...)):
         if not chunks:
             raise HTTPException(status_code=400, detail="No content extracted from PDF")
         
-        # add to specific collection
-        result = add_documents(chunks, file.filename, no_of_pages)
+        # add to specific collection for current user
+        result = add_documents(chunks, file.filename, user_id, no_of_pages)
         
         # clear cache in for future re-uploads with same filename
         engine = get_rag_engine()
-        if file.filename in engine.bm25_cache:
-            del engine.bm25_cache[file.filename]
+        cache_key = f"{user_id}_{file.filename}"
+        if cache_key in engine.bm25_cache:
+            del engine.bm25_cache[cache_key]
         
         # Cleanup
         os.remove(temp_path)
+
+        print(f"✓ Document uploaded: {file.filename} (user: {user_id})")
         
         return UploadResponse(
             filename = file.filename,
@@ -133,17 +215,12 @@ async def upload_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
 
 @app.post("/query", response_model=QueryResponse)
-async def query_documents(request: QueryRequest):
+async def query_documents(request: QueryRequest, user_id: str = Depends(get_current_user)):
     """
     Ask a question about one or more documents.
-    
-    Examples:
-    - Query all documents: {"question": "What was the revenue?"}
-    - Query specific doc: {"question": "...", "document_names": ["report.pdf"]}
-    - Query multiple docs: {"question": "...", "document_names": ["q1.pdf", "q2.pdf"]}
     """
     # Check if any documents exist
-    all_docs = list_all_documents()
+    all_docs = list_all_documents(user_id)
     if not all_docs:
         raise HTTPException(400, "No documents in database. Please upload documents first.")
     
@@ -154,7 +231,8 @@ async def query_documents(request: QueryRequest):
         result = engine.query(
             question=request.question,
             doc_names=request.document_names,
-            n_results=request.n_results
+            n_results=request.n_results,
+            user_id=user_id
         )
         
         return QueryResponse(
@@ -170,20 +248,21 @@ async def query_documents(request: QueryRequest):
 
 # <---------------------- DELETE requests ---------------------->
 @app.delete("/documents/{doc_name}")
-async def delete_document(doc_name: str):
+async def delete_document(doc_name: str, user_id: str = Depends(get_current_user)):
     """
     Delete a specific document and its collection.
     """
-    success = delete_document_collection(doc_name)
+    success = delete_document_collection(doc_name, user_id)
     
     if not success:
         raise HTTPException(404, f"Document '{doc_name}' not found")
     
     # Clear from BM25 cache
     engine = get_rag_engine()
-    if doc_name in engine.bm25_cache:
-        del engine.bm25_cache[doc_name]
-        print(f"✓ Delected {doc_name} BM25 cache")
+    cache_key = f"{user_id}_{doc_name}"
+    if cache_key in engine.bm25_cache:
+        del engine.bm25_cache[cache_key]
+        print(f"✓ Delected {doc_name} BM25 cache (user: {user_id})")
     
     return {"message": f"Document '{doc_name}' deleted successfully"}
 
