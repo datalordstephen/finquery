@@ -16,8 +16,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-# Use cache mount to speed up subsequent builds
-RUN --mount=type=cache,target=/root/.cache/uv,id=uv_cache \
+# Use cache mount with Railway-compatible ID format
+RUN --mount=type=cache,id=s/f12344f9-b197-42d2-acfc-0048905a93c8-/root/cache/uv,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # Set path
