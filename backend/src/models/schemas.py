@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=2)
@@ -42,4 +43,4 @@ class Token(BaseModel):
 
 class UserResponse(BaseModel):
     email: str
-    created_at: str
+    created_at: datetime
