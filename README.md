@@ -29,7 +29,9 @@ FinQuery addresses the **security** concerns of analyzing _personal_, dense `fin
 * **Multi-Document Intelligence**: Each document is managed in an isolated local collection, allowing for targeted or cross-document queries.
 * **Page-Level Citations**: Every answer includes the source filename and specific page number (e.g., `report.pdf, page 5`).
 * **Table-Aware Ingestion**: PDF processing is optimized to preserve the integrity of numerical data and tables.
-* **Context Enhancement**: Tables are passed in a small llm call to to normalize them and add context that can improve semantic search 
+* **Context Enhancement**: Tables are passed in a small llm call to to normalize them and add context that can improve semantic search.
+* **Authentication & Security**: Secure user registration and login (JWT) with password hashing.
+* **User-Scoped Data**: Documents and chat history are isolated per user, ensuring data privacy in a multi-user environment. 
 
 ---
 
@@ -38,10 +40,11 @@ FinQuery addresses the **security** concerns of analyzing _personal_, dense `fin
 * **Core**: Python 3.13+.
 * **Framework**: FastAPI.
 * **LLM Engine**: Together AI (Meta-Llama 3.1 8B Instruct).
-* **Vector Database**: ChromaDB (Persistent local storage).
 * **Embeddings**: Sentence-Transformers (`all-MiniLM-L6-v2`).
 * **Document Processing**: PyMuPDF and LangChain.
 * **Table Extraction**: Camelot-py
+* **Database**: PostgreSQL (User data), ChromaDB (Vector embeddings).
+* **Infrastructure**: Railway (Backend + DB), Vercel (Frontend).
 
 ### Frontend
 * **Library**: React 19.
@@ -63,19 +66,23 @@ finquery/
 │   ├── src/
 │   │   ├── models/
 │   │   │   ├── schemas.py      # Pydantic schemas for API
+│   │   │   ├── user.py         # User model
 │   │   ├── services/
+│   │   │   ├── auth.py         # JWT authentication
 │   │   │   ├── ingest.py       # PDF processing  
 │   │   │   ├── process_tables.py   # table processing
 │   │   │   ├── rag_engine.py   # Complete RAG logic
 │   │   │   ├── retrieval.py    # BM25 and RRF algorithms
 │   │   │   └── vector_store.py # ChromaDB management
+│   │   ├── database.py         # DB connection
 │   │   └── main.py             # FastAPI app entry
 │   ├── .env                    # Togetherai API
 │   ├── pyproject.toml       
 │   └── uv.lock                 # Dependencies
 ├── frontend/
     ├── src/
-    │   ├── components/         # UI components 
+    │   ├── components/         # UI components
+    │   ├── pages/              # Page components
     │   ├── api.js              # Axios service config
     │   ├── App.css             # Styling
     │   ├── App.jsx             # Root component
@@ -140,6 +147,7 @@ touch .env
 4. Paste your together API Key
 ```env
 TOGETHER_API_KEY=<your-key-here>
+DATABASE_URL=postgresql://user:pass@localhost:5432/dbname
 ```
 5. Frontend Setup:
 ```bash
@@ -155,12 +163,14 @@ The app should be running now and accessible at [http://localhost:5173/](http://
 ## API Reference
 | Endpoint | Method | Description |
 |-----------|---------|---------|
-| `/upload` | `POST` | Processes a PDF and creates a new local document collection.
-| `/query` | `POST` | Executes a hybrid RAG search across selected documents.
-| `/documents` | `GET` | Lists all indexed documents and their metadata.
-| `/documents/{doc_name}` | `GET` | Lists a particular  documents and it's metadata.
-| `/documents` | `DELETE` | Deletes all collections 
-| `/documents/{doc_name}` | `DELETE` | Removes a specific document and its associated data.
+| `/register` | `POST` | Register a new user account. |
+| `/login` | `POST` | Authenticate user and receive access token. |
+| `/upload` | `POST` | Processes a PDF and creates a new local document collection. |
+| `/query` | `POST` | Executes a hybrid RAG search across selected documents. |
+| `/documents` | `GET` | Lists all indexed documents and their metadata. |
+| `/documents/{doc_name}` | `GET` | Lists a particular  documents and it's metadata. |
+| `/documents` | `DELETE` | Deletes all collections |
+| `/documents/{doc_name}` | `DELETE` | Removes a specific document and its associated data. |
 
 ## Privacy & Security
 * **Local Residency:** All financial documents are stored as text chunks and vector embeddings locally in your ./chroma_db directory.
