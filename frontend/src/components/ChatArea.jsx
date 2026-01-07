@@ -14,9 +14,9 @@ const ChatArea = ({ messages, isLoading, onExampleClick }) => {
 
   // Example questions
   const exampleQuestions = [
+    "Hi, what's up?",
     "What do you do?",
-    "What was the revenue in year 2023?",
-    "What were the operating expenses?",
+    "What was my highest expense?",
     "How much did I spend at bokku?",
   ];
 

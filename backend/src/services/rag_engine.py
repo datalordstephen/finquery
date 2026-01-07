@@ -234,19 +234,19 @@ Answer:"""
                 "context": None,
                 "searched_docs": []
             }
-
-        # perform RAG 
+        
         # If no specific docs provided, search all
         if doc_names is None:
             all_docs = list_all_documents(user_id)
             doc_names = [doc["name"] for doc in all_docs]
         
-        # can't search in an empty db
+        # If no documents exist
         if not doc_names:
             return {
                 "answer": "No documents found in database. Please upload documents first.",
                 "sources": [],
-                "context": ""
+                "context": None,
+                "searched_docs": []
             }
 
         # 1. Retrieve relevant chunks

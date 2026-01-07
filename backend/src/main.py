@@ -228,10 +228,6 @@ async def query_documents(request: QueryRequest, user_id: str = Depends(get_curr
     """
     Ask a question about one or more documents.
     """
-    # Check if any documents exist
-    all_docs = list_all_documents(user_id)
-    if not all_docs:
-        raise HTTPException(400, "No documents in database. Please upload documents first.")
     
     try:
         engine = get_rag_engine()
