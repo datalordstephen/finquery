@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -16,7 +17,7 @@ COPY pyproject.toml uv.lock ./
 
 # Install dependencies
 # Use cache mount to speed up subsequent builds
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,target=/root/.cache/uv,id=uv_cache \
     uv sync --frozen --no-dev
 
 # Set path
