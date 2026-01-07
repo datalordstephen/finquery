@@ -70,8 +70,6 @@ def process_pdf(llm_client, pdf_path: str) -> list[dict]:
                         "table_num": table_idx + 1
                     }
                 })
-            
-            print(f"table {table_idx+1}: \n{enhanced_table}")
         
         # Split page text into chunks
         page_chunks = TEXT_SPLITTER.split_text(page_text)

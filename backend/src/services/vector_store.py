@@ -13,8 +13,6 @@ embed_fn = SentenceTransformerEmbeddingFunction(
 # <--------------- complete overhaul to allow for a multi-collection system ----------------->
 def get_chroma_client():
     """Get persistent ChromaDB client."""
-    os.makedirs(CHROMA_PATH, exist_ok=True)
-
     return chromadb.PersistentClient(path=CHROMA_PATH)
 
 def create_collection_name(doc_name: str, user_id: str = None) -> str:
@@ -40,14 +38,13 @@ def create_collection_name(doc_name: str, user_id: str = None) -> str:
 def get_or_create_collection(
     doc_name: str, 
     user_id: str = None, 
-    path: str = "./chroma_db", 
     pages: int = None, 
     creating : bool = False
 ):
     """
     Get or create a user scoped collection for a specific document.
     """
-    client = get_chroma_client(path)
+    client = get_chroma_client()
     collection_name = create_collection_name(doc_name, user_id)
 
     # add metadata if we're creating the document. else just retrieve
@@ -158,12 +155,12 @@ def query_multiple_collections(
     all_results.sort(key=lambda x: x["score"], reverse=True)
     return all_results[:n_results]
 
-def list_all_documents(user_id: str = None, path: str = "./chroma_db") -> list[dict]:
+def list_all_documents(user_id: str = None) -> list[dict]:
     """
     List all document collections in the database.
     If user_id provided, only return that user's documents.
     """
-    client = get_chroma_client(path)
+    client = get_chroma_client()
     collections = client.list_collections()
     
     documents = []
@@ -182,12 +179,12 @@ def list_all_documents(user_id: str = None, path: str = "./chroma_db") -> list[d
     
     return documents
 
-def delete_document_collection(doc_name: str, user_id: str = None, path: str = "./chroma_db"):
+def delete_document_collection(doc_name: str, user_id: str = None):
     """
     Delete a specific document's collection.
     If user_id provided, only delete if it belongs to that user.
     """
-    client = get_chroma_client(path)
+    client = get_chroma_client()
     collection_name = create_collection_name(doc_name, user_id)
     
     try:
@@ -208,7 +205,7 @@ def get_collection_stats(doc_name: str, user_id: str = None) -> dict:
     Get statistics for a specific document collection.
     """
     try:
-        collection = get_or_create_collection(doc_name)
+        collection = get_or_create_collection(doc_name, user_id)
 
          # Verify ownership if user_id provided
         if user_id and collection.metadata.get("user_id") != user_id:

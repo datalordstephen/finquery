@@ -7,11 +7,17 @@ from .services.ingest import process_pdf
 from .services.vector_store import add_documents, list_all_documents, delete_document_collection, get_collection_stats
 from .services.rag_engine import RAGEngine
 from .models.schemas import *
+from .models.user import User
+from .database import get_db, engine, Base
+from sqlalchemy.orm import Session
 
 from datetime import timedelta, datetime
 import os
 import shutil
 from dotenv import load_dotenv  
+
+# Create database tables (if relying on this instead of alembic for initial dev)
+Base.metadata.create_all(bind=engine)
 
 # Disable tokenizer parallelism to avoid fork warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -23,8 +29,8 @@ app = FastAPI(
     version="3.0.0"
 )
 
-# Initialize mock users database (for testing)
-users_db = {}
+# Initialize users_db removal
+# users_db = {}
 
 # Get allowed origins from environment variable
 ALLOWED_ORIGINS = os.getenv(
@@ -67,17 +73,17 @@ async def root():
     }
 
 @app.get("/me", response_model=UserResponse)
-async def get_current_user_info(user_id: str = Depends(get_current_user)):
+async def get_current_user_info(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Get current user information.
     """
-    if user_id not in users_db:
+    user = db.query(User).filter(User.email == user_id).first()
+    if not user:
         raise HTTPException(404, "User not found")
     
-    user = users_db[user_id]
     return {
-        "email": user["email"],
-        "created_at": user["created_at"]
+        "email": user.email,
+        "created_at": user.created_at
     }
 
 @app.get("/documents", response_model=DocumentsListResponse)
@@ -110,57 +116,60 @@ async def get_document_stats(doc_name: str, user_id: str = Depends(get_current_u
 
 # <---------------------- POST requests ---------------------->
 @app.post("/register", response_model=Token)
-async def register(user: UserRegister):
+async def register(user: UserRegister, db: Session = Depends(get_db)):
     """
     Register a new user.
     """
-    if user.email in users_db:
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
         raise HTTPException(400, "Email already registered")
     
     hashed_password = get_password_hash(user.password)
-    users_db[user.email] = {
-        "email": user.email,
-        "hashed_password": hashed_password,
-        "created_at": datetime.utcnow().isoformat()
-    }
+    new_user = User(
+        email=user.email,
+        hashed_password=hashed_password,
+        created_at=datetime.utcnow()
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
     
     access_token = create_access_token(
-        data={"sub": user.email},
+        data={"sub": new_user.email},
         expires_delta=timedelta(minutes=30)
     )
     
-    print(f"✓ New user registered: {user.email}")
-    print("CURRENT USERS: ", users_db.keys())
+    print(f"✓ New user registered: {new_user.email}")
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "email": user.email
+        "email": new_user.email
     }
 
 @app.post("/login", response_model=Token)
-async def login(user: UserLogin):
+async def login(user: UserLogin, db: Session = Depends(get_db)):
     """
     Login existing user.
     """
-    if user.email not in users_db:
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if not db_user:
         raise HTTPException(401, "Invalid email or password")
     
-    db_user = users_db[user.email]
-    if not verify_password(user.password, db_user["hashed_password"]):
+    if not verify_password(user.password, db_user.hashed_password):
         raise HTTPException(401, "Invalid email or password")
     
     access_token = create_access_token(
-        data={"sub": user.email},
+        data={"sub": db_user.email},
         expires_delta=timedelta(minutes=30)
     )
     
-    print(f"✓ User logged in: {user.email}")
+    print(f"✓ User logged in: {db_user.email}")
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "email": user.email
+        "email": db_user.email
     }
 
 @app.post("/upload", response_model=UploadResponse)

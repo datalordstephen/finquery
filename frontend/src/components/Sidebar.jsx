@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 
-const Sidebar = ({ documents, selectedDocs, onSelectDoc, onUpload, onDelete, isUploading }) => {
+const Sidebar = ({ documents, selectedDocs, onSelectDoc, onUpload, onDelete, isUploading, user, onLogout }) => {
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -92,10 +92,18 @@ const Sidebar = ({ documents, selectedDocs, onSelectDoc, onUpload, onDelete, isU
 
   return (
     <div className="sidebar">
-      {/* Header */}
+      {/* Header with user info */}
       <div className="sidebar-header">
         <div className="sidebar-logo">FinQuery</div>
         <div className="sidebar-tagline">Financial Document Q&A</div>
+        {user && (
+          <div className="user-info">
+            <span className="user-email">{user.email}</span>
+            <button className="logout-btn" onClick={onLogout}>
+              Logout
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Documents List */}
