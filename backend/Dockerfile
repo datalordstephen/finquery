@@ -15,7 +15,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv sync --frozen --no-dev
+# Use cache mount to speed up subsequent builds
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 # Set path
 ENV PATH="/app/.venv/bin:$PATH"
