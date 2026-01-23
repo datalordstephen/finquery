@@ -12,19 +12,23 @@ RUN apt-get update && apt-get install -y \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
 
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
+# Constants
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
 
-# Install dependencies
-# Use cache mount with Railway-compatible ID format
+# copy and install dependencies only to cache them
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,id=s/f12344f9-b197-42d2-acfc-0048905a93c8-/root/cache/uv,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+# Copy application code
+COPY src/ ./src/
+
+# install dependencies
 RUN --mount=type=cache,id=s/f12344f9-b197-42d2-acfc-0048905a93c8-/root/cache/uv,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
-# Set path
 ENV PATH="/app/.venv/bin:$PATH"
-
-# Copy application code
-COPY . .
 
 # Create directory for ChromaDB
 RUN mkdir -p /app/chroma_db
