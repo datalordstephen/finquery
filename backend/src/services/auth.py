@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.user import User
 
-SECRET_KEY = os.getenv("SECRET_KEY", "default-secret-key")
+# generated a random secret key using secrets
+SECRET_KEY = os.getenv("SECRET_KEY", "9594873a5e0a8ccde1adc3af1ba93f5f2bcc5632b77b750452713d216791c013")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

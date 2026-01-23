@@ -6,9 +6,9 @@ const Message = ({ message }) => {
   return (
     <div className={`message ${isUser ? 'user' : 'assistant'}`}>
       <div className="message-content">
-        {!isUser && message.sources && message.sources.length > 0 && (
+        {!isUser && (
           <div className="message-sources">
-            Sources: {message.sources.map(s => `Page ${s.page}`).join(', ')}
+            FinQuery
           </div>
         )}
         <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>

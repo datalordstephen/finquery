@@ -139,10 +139,9 @@ class RAGEngine:
         context_str = "\n\n---\n\n".join(context_parts)
         return context_str, sources
 
-    def generate_answer(self, context: str, query: str) -> str:
-        """Generate answer using LLM"""
-
-        system_prompt = """
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for LLM generation."""
+        return """
 You are FinQuery, an intelligent financial document assistant.
 
 IDENTITY & PURPOSE:
@@ -185,16 +184,15 @@ IMPORTANT:
 
 TONE: Professional, precise, and helpful.
 """
+
+    def generate_answer(self, context: str, query: str) -> str:
+        """Generate answer using LLM (non-streaming)."""
         if not context:
             return "I couldn't find relevant information in the documents to answer your question."
-        
-        user_prompt = f"""
-Context: {context}
 
-Question: {query}
+        system_prompt = self._get_system_prompt()
+        user_prompt = f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
 
-Answer:"""
-        
         try:
             response = self.llm_client.chat.completions.create(
                 model="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
@@ -205,11 +203,39 @@ Answer:"""
                 temperature=0,
                 max_tokens=1000
             )
-            
+
             return response.choices[0].message.content
-        
+
         except Exception as e:
             return f"Error generating answer: {str(e)}"
+
+    def generate_answer_stream(self, context: str, query: str):
+        """Generate answer using LLM with streaming. Yields tokens as they arrive."""
+        if not context:
+            yield "I couldn't find relevant information in the documents to answer your question."
+            return
+
+        system_prompt = self._get_system_prompt()
+        user_prompt = f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
+
+        try:
+            response = self.llm_client.chat.completions.create(
+                model="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0,
+                max_tokens=1000,
+                stream=True
+            )
+
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+        except Exception as e:
+            yield f"Error generating answer: {str(e)}"
 
     def query(self, question: str, doc_names: list[str] | None = None, user_id: str = None, n_results: int = 5) -> dict:
         """

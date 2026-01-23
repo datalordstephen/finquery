@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import Sidebar from '../components/Sidebar';
 import ChatArea from '../components/ChatArea';
 import InputBar from '../components/InputBar';
-import { uploadDocument, listDocuments, queryDocuments, deleteDocument } from '../api';
+import { uploadDocument, listDocuments, queryDocumentsStream, deleteDocument } from '../api';
 import { useAuth } from '../context/AuthContext';
 import '../App.css';
 
@@ -88,24 +88,52 @@ function Dashboard() {
     };
     setMessages((prev) => [...prev, userMessage]);
 
+    // Add empty assistant message that will be streamed into
+    const assistantMessage = {
+      role: 'assistant',
+      content: '',
+      sources: [],
+    };
+    setMessages((prev) => [...prev, assistantMessage]);
     setIsLoading(true);
+
     try {
       const documentNames = selectedDocs.length > 0 ? selectedDocs : null;
-      const response = await queryDocuments(question, documentNames);
 
-      const assistantMessage = {
-        role: 'assistant',
-        content: response.answer,
-        sources: response.sources,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      await queryDocumentsStream(
+        question,
+        documentNames,
+        // onToken - append each token to the message
+        (token) => {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            return [
+              ...prev.slice(0, -1),
+              { ...lastMsg, content: lastMsg.content + token }
+            ];
+          });
+        },
+        // onDone - add sources when complete
+        (sources) => {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            return [
+              ...prev.slice(0, -1),
+              { ...lastMsg, sources }
+            ];
+          });
+        }
+      );
     } catch (error) {
       console.error('Error querying documents:', error);
-      const errorMessage = {
-        role: 'assistant',
-        content: 'Sorry, an error occurred while processing your question. Please try again.',
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastMsg = updated[updated.length - 1];
+        if (!lastMsg.content) {
+          lastMsg.content = 'Sorry, an error occurred while processing your question. Please try again.';
+        }
+        return [...updated];
+      });
       toast.error('Failed to get response');
     } finally {
       setIsLoading(false);
